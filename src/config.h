@@ -175,6 +175,8 @@ public:
 
 	unsigned GetLCDColumns (void) const;
 	unsigned GetLCDRows (void) const;
+	bool GetCFA635Enabled (void) const;
+	const char *GetCFA635SerialDevice (void) const;
 
 	// GPIO Button Navigation
 	// GPIO pin numbers are chip numbers, not header positions
@@ -329,6 +331,8 @@ private:
 
 	unsigned m_nLCDColumns;
 	unsigned m_nLCDRows;
+	bool m_bCFA635Enabled;
+	std::string m_CFA635SerialDevice;
 	
 	unsigned m_nButtonPinPrev;
 	unsigned m_nButtonPinNext;

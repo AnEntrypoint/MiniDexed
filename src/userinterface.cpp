@@ -22,6 +22,7 @@
 #include <circle/logger.h>
 #include <circle/string.h>
 #include <circle/startup.h>
+#include <circle/devicenameservice.h>
 #include <string.h>
 #include <assert.h>
 
@@ -35,11 +36,17 @@ CUserInterface::CUserInterface (CMiniDexed *pMiniDexed, CGPIOManager *pGPIOManag
 	m_pConfig (pConfig),
 	m_pLCD (0),
 	m_pLCDBuffered (0),
+	m_pCFA635Device (0),
+	m_bCFA635Enabled (false),
+	m_bCFA635Ready (false),
+	m_nCFAReadBufferLen (0),
 	m_pUIButtons (0),
 	m_pRotaryEncoder (0),
 	m_bSwitchPressed (false),
 	m_Menu (this, pMiniDexed, pConfig)
 {
+	m_CFALine0[0] = '\0';
+	m_CFALine1[0] = '\0';
 }
 
 CUserInterface::~CUserInterface (void)
@@ -56,10 +63,20 @@ bool CUserInterface::Initialize (void)
 
 	if (m_pConfig->GetLCDEnabled ())
 	{
+		m_bCFA635Enabled = m_pConfig->GetCFA635Enabled ();
+		if (m_bCFA635Enabled)
+		{
+			LOGDBG ("LCD: CFA635 serial backend enabled");
+		}
+
 		unsigned i2caddr = m_pConfig->GetLCDI2CAddress ();
 		unsigned ssd1306addr = m_pConfig->GetSSD1306LCDI2CAddress ();
 		bool st7789 = m_pConfig->GetST7789Enabled ();
-		if (ssd1306addr != 0) {
+		if (m_bCFA635Enabled)
+		{
+			// Handled dynamically in ProcessCFA635 once USB serial device appears.
+		}
+		else if (ssd1306addr != 0) {
 			m_pSSD1306 = new CSSD1306Device (m_pConfig->GetSSD1306LCDWidth (), m_pConfig->GetSSD1306LCDHeight (),
 											 m_pI2CMaster, ssd1306addr,
 											 m_pConfig->GetSSD1306LCDRotate (), m_pConfig->GetSSD1306LCDMirror ());
@@ -150,15 +167,16 @@ bool CUserInterface::Initialize (void)
 			LOGDBG ("LCD: HD44780 I2C");
 			m_pLCD = m_pHD44780;
 		}
-		assert (m_pLCD);
-
-		m_pLCDBuffered = new CWriteBufferDevice (m_pLCD);
-		assert (m_pLCDBuffered);
-		// clear sceen and go to top left corner
-		LCDWrite ("\x1B[H\x1B[J");		// cursor home and clear screen
-		LCDWrite ("\x1B[?25l\x1B""d+");		// cursor off, autopage mode
-		LCDWrite ("MiniDexed\nLoading...");
-		m_pLCDBuffered->Update ();
+		if (m_pLCD)
+		{
+			m_pLCDBuffered = new CWriteBufferDevice (m_pLCD);
+			assert (m_pLCDBuffered);
+			// clear sceen and go to top left corner
+			LCDWrite ("\x1B[H\x1B[J");		// cursor home and clear screen
+			LCDWrite ("\x1B[?25l\x1B""d+");		// cursor off, autopage mode
+			LCDWrite ("MiniDexed\nLoading...");
+			m_pLCDBuffered->Update ();
+		}
 
 		LOGDBG ("LCD initialized");
 	}
@@ -206,6 +224,7 @@ void CUserInterface::Process (void)
 	{
 		m_pLCDBuffered->Update ();
 	}
+	ProcessCFA635 ();
 	if (m_pUIButtons)
 	{
 		m_pUIButtons->Update();
@@ -274,6 +293,24 @@ void CUserInterface::DisplayWrite (const char *pMenu, const char *pParam, const 
 		Msg.Append ("\x1B[K");		// clear end of line
 	}
 
+	if (m_bCFA635Enabled)
+	{
+		unsigned cols = m_pConfig->GetLCDColumns ();
+		if (cols > 40) cols = 40;
+		unsigned i = 0;
+		for (; i < cols && pParam[i] != '\0'; i++) m_CFALine0[i] = pParam[i];
+		for (; i + strlen (pMenu) < cols && i < cols; i++) m_CFALine0[i] = ' ';
+		for (unsigned j = 0; i < cols && pMenu[j] != '\0'; i++, j++) m_CFALine0[i] = pMenu[j];
+		m_CFALine0[cols] = '\0';
+
+		for (i = 0; i < cols; i++) m_CFALine1[i] = ' ';
+		unsigned pos = 0;
+		if (bArrowDown && pos < cols) m_CFALine1[pos++] = '<';
+		for (unsigned j = 0; pValue[j] != '\0' && pos < cols; j++, pos++) m_CFALine1[pos] = pValue[j];
+		if (bArrowUp && cols > 0) m_CFALine1[cols-1] = '>';
+		m_CFALine1[cols] = '\0';
+	}
+
 	LCDWrite (Msg);
 }
 
@@ -282,6 +319,194 @@ void CUserInterface::LCDWrite (const char *pString)
 	if (m_pLCDBuffered)
 	{
 		m_pLCDBuffered->Write (pString, strlen (pString));
+	}
+}
+
+u16 CUserInterface::GetCFA635CRC (const u8 *pData, unsigned nLength)
+{
+	u16 crc = 0xFFFF;
+	for (unsigned i = 0; i < nLength; i++)
+	{
+		u8 data = pData[i];
+		for (unsigned j = 0; j < 8; j++)
+		{
+			if ((crc ^ data) & 0x01)
+			{
+				crc >>= 1;
+				crc ^= 0x8408;
+			}
+			else
+			{
+				crc >>= 1;
+			}
+			data >>= 1;
+		}
+	}
+	return (u16) ~crc;
+}
+
+bool CUserInterface::SendCFA635Command (u8 type, const u8 *pData, u8 nLength)
+{
+	if (!m_pCFA635Device || !m_bCFA635Ready)
+	{
+		return false;
+	}
+
+	u8 packet[2 + 22 + 2];
+	packet[0] = type;
+	packet[1] = nLength;
+	for (u8 i = 0; i < nLength; i++)
+	{
+		packet[2+i] = pData ? pData[i] : 0;
+	}
+	u16 crc = GetCFA635CRC (packet, (unsigned) (2 + nLength));
+	packet[2+nLength] = (u8) (crc & 0xFF);
+	packet[3+nLength] = (u8) ((crc >> 8) & 0xFF);
+
+	int nWritten = m_pCFA635Device->Write (packet, (unsigned) (4 + nLength));
+	return nWritten == (int) (4 + nLength);
+}
+
+bool CUserInterface::SendCFA635Text (u8 row, u8 col, const char *pText)
+{
+	if (!pText)
+	{
+		return false;
+	}
+
+	const unsigned nColumns = m_pConfig->GetLCDColumns ();
+	if (nColumns == 0)
+	{
+		return false;
+	}
+
+	u8 payload[22];
+	payload[0] = col;
+	payload[1] = row;
+	unsigned n = 0;
+	while (pText[n] && n < nColumns && n < 20)
+	{
+		payload[2+n] = (u8) pText[n];
+		n++;
+	}
+	while (n < nColumns && n < 20)
+	{
+		payload[2+n] = ' ';
+		n++;
+	}
+	return SendCFA635Command (0x1F, payload, (u8) (2+n));
+}
+
+void CUserInterface::HandleCFA635KeyActivity (u8 keyCode)
+{
+	switch (keyCode)
+	{
+	case 1: // UP press
+		InjectButtonEvent (CUIButton::BtnEventBack);
+		break;
+	case 2: // DOWN press
+		InjectButtonEvent (CUIButton::BtnEventSelect);
+		break;
+	case 3: // LEFT press
+		InjectButtonEvent (CUIButton::BtnEventPrev);
+		break;
+	case 4: // RIGHT press
+		InjectButtonEvent (CUIButton::BtnEventNext);
+		break;
+	case 5: // ENTER press
+		InjectButtonEvent (CUIButton::BtnEventSelect);
+		break;
+	case 6: // EXIT press
+		InjectButtonEvent (CUIButton::BtnEventHome);
+		break;
+	default:
+		break;
+	}
+}
+
+void CUserInterface::ProcessCFA635 (void)
+{
+	if (!m_bCFA635Enabled)
+	{
+		return;
+	}
+
+	if (!m_pCFA635Device)
+	{
+		const char *pNames[] = {
+			m_pConfig->GetCFA635SerialDevice (),
+			"CFA635-USB", "utty1", "ttyACM1", "ttyUSB1"
+		};
+		for (unsigned i = 0; i < sizeof (pNames) / sizeof (pNames[0]); i++)
+		{
+			if (!pNames[i] || !pNames[i][0])
+			{
+				continue;
+			}
+			m_pCFA635Device = CDeviceNameService::Get ()->GetDevice (pNames[i], FALSE);
+			if (m_pCFA635Device)
+			{
+				LOGNOTE ("LCD: CFA635 connected on %s", pNames[i]);
+				m_bCFA635Ready = true;
+				const u8 backlight = 100;
+				SendCFA635Command (0x0E, &backlight, 1);
+				SendCFA635Command (0x06, 0, 0);
+				const u8 keyReportMask = 0x3F;
+				SendCFA635Command (0x17, &keyReportMask, 1);
+				break;
+			}
+		}
+	}
+
+	if (!m_pCFA635Device || !m_bCFA635Ready)
+	{
+		return;
+	}
+
+	if (m_CFALine0[0] != '\0' || m_CFALine1[0] != '\0')
+	{
+		if (m_CFALine0[0] != '\0')
+		{
+			SendCFA635Text (0, 0, m_CFALine0);
+			m_CFALine0[0] = '\0';
+		}
+		if (m_CFALine1[0] != '\0')
+		{
+			SendCFA635Text (1, 0, m_CFALine1);
+			m_CFALine1[0] = '\0';
+		}
+	}
+
+	int nRead = m_pCFA635Device->Read (m_CFAReadBuffer + m_nCFAReadBufferLen,
+					    sizeof (m_CFAReadBuffer) - m_nCFAReadBufferLen);
+	if (nRead <= 0)
+	{
+		return;
+	}
+	m_nCFAReadBufferLen += (unsigned) nRead;
+
+	while (m_nCFAReadBufferLen >= 4)
+	{
+		u8 type = m_CFAReadBuffer[0];
+		u8 len = m_CFAReadBuffer[1];
+		unsigned packetLen = 4 + len;
+		if (packetLen > sizeof (m_CFAReadBuffer))
+		{
+			m_nCFAReadBufferLen = 0;
+			return;
+		}
+		if (m_nCFAReadBufferLen < packetLen)
+		{
+			break;
+		}
+		u16 crcRx = (u16) m_CFAReadBuffer[2+len] | ((u16) m_CFAReadBuffer[3+len] << 8);
+		u16 crcCalc = GetCFA635CRC (m_CFAReadBuffer, 2+len);
+		if (crcRx == crcCalc && type == 0x80 && len == 1)
+		{
+			HandleCFA635KeyActivity (m_CFAReadBuffer[2]);
+		}
+		memmove (m_CFAReadBuffer, m_CFAReadBuffer + packetLen, m_nCFAReadBufferLen - packetLen);
+		m_nCFAReadBufferLen -= packetLen;
 	}
 }
 

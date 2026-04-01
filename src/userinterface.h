@@ -31,6 +31,7 @@
 #include <circle/writebuffer.h>
 #include <circle/i2cmaster.h>
 #include <circle/spimaster.h>
+#include <circle/device.h>
 
 class CMiniDexed;
 
@@ -61,6 +62,11 @@ public:
 
 private:
 	void LCDWrite (const char *pString);		// Print to optional HD44780 display
+	void ProcessCFA635 (void);
+	bool SendCFA635Command (u8 type, const u8 *pData, u8 nLength);
+	bool SendCFA635Text (u8 row, u8 col, const char *pText);
+	static u16 GetCFA635CRC (const u8 *pData, unsigned nLength);
+	void HandleCFA635KeyActivity (u8 keyCode);
 
 	void EncoderEventHandler (CKY040::TEvent Event);
 	static void EncoderEventStub (CKY040::TEvent Event, void *pParam);
@@ -81,6 +87,13 @@ private:
 	CST7789Display *m_pST7789Display;
 	CST7789Device  *m_pST7789;
 	CWriteBufferDevice *m_pLCDBuffered;
+	CDevice *m_pCFA635Device;
+	bool m_bCFA635Enabled;
+	bool m_bCFA635Ready;
+	char m_CFALine0[41];
+	char m_CFALine1[41];
+	u8 m_CFAReadBuffer[128];
+	unsigned m_nCFAReadBufferLen;
 	
 	CUIButtons *m_pUIButtons;
 
