@@ -123,6 +123,12 @@ void CPCKeyboard::KeyStatusHandlerRaw (unsigned char ucModifiers, const unsigned
 		if (   ucKeyCode != 0
 		    && !FindByte (s_pThis->m_LastKeys, ucKeyCode, 6))
 		{
+			CUIButton::BtnEvent uiEvent = GetUIButtonEvent (ucKeyCode);
+			if (uiEvent != CUIButton::BtnEventNone && s_pThis->m_pUI != 0)
+			{
+				s_pThis->m_pUI->InjectButtonEvent (uiEvent);
+			}
+
 			u8 ucKeyNumber = GetKeyNumber (ucKeyCode);
 			if (ucKeyNumber != 0)
 			{
@@ -164,6 +170,57 @@ u8 CPCKeyboard::GetKeyNumber (u8 ucKeyCode)
 	}
 
 	return 0;
+}
+
+CUIButton::BtnEvent CPCKeyboard::GetUIButtonEvent (u8 ucKeyCode)
+{
+	switch (ucKeyCode)
+	{
+	// HID arrow keys
+	case 0x50:
+		return CUIButton::BtnEventPrev;
+	case 0x4F:
+		return CUIButton::BtnEventNext;
+	case 0x52:
+		return CUIButton::BtnEventBack;
+	case 0x51:
+		return CUIButton::BtnEventSelect;
+	// Enter / Escape / Home
+	case 0x28:
+	case 0x58:
+		return CUIButton::BtnEventSelect;
+	case 0x29:
+		return CUIButton::BtnEventHome;
+	case 0x4A:
+		return CUIButton::BtnEventHome;
+	// Optional convenience mappings for extra keys
+	case 0x3A:
+		return CUIButton::BtnEventPrev;
+	case 0x3B:
+		return CUIButton::BtnEventNext;
+	case 0x3C:
+		return CUIButton::BtnEventBack;
+	case 0x3D:
+		return CUIButton::BtnEventSelect;
+	case 0x3E:
+		return CUIButton::BtnEventHome;
+	case 0x4B:
+		return CUIButton::BtnEventPgmUp;
+	case 0x4E:
+		return CUIButton::BtnEventPgmDown;
+	case 0x4D:
+		return CUIButton::BtnEventBankUp;
+	case 0x4C:
+		return CUIButton::BtnEventBankDown;
+	case 0x5D:
+		return CUIButton::BtnEventTGUp;
+	case 0x5C:
+		return CUIButton::BtnEventTGDown;
+	default:
+		break;
+	}
+
+	return CUIButton::BtnEventNone;
 }
 
 boolean CPCKeyboard::FindByte (const u8 *pBuffer, u8 ucByte, unsigned nLength)

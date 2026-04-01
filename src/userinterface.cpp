@@ -344,6 +344,11 @@ void CUserInterface::EncoderEventStub (CKY040::TEvent Event, void *pParam)
 
 void CUserInterface::UIButtonsEventHandler (CUIButton::BtnEvent Event)
 {
+	InjectButtonEvent (Event);
+}
+
+void CUserInterface::InjectButtonEvent (CUIButton::BtnEvent Event)
+{
 	switch (Event)
 	{
 	case CUIButton::BtnEventPrev:

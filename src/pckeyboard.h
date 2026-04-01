@@ -22,6 +22,7 @@
 
 #include "mididevice.h"
 #include "config.h"
+#include "uibuttons.h"
 #include <circle/usb/usbkeyboard.h>
 #include <circle/device.h>
 #include <circle/types.h>
@@ -40,6 +41,7 @@ private:
 	static void KeyStatusHandlerRaw (unsigned char ucModifiers, const unsigned char RawKeys[6]);
 
 	static u8 GetKeyNumber (u8 ucKeyCode);
+	static CUIButton::BtnEvent GetUIButtonEvent (u8 ucKeyCode);
 
 	static boolean FindByte (const u8 *pBuffer, u8 ucByte, unsigned nLength);
 

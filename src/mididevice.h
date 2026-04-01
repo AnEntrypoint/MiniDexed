@@ -66,11 +66,12 @@ protected:
 private:
 	bool HandleMIDISystemCC(const u8 ucCC, const u8 ucCCval);
 
-private:
+protected:
 	CMiniDexed *m_pSynthesizer;
 	CConfig *m_pConfig;
 	CUserInterface *m_pUI;
 
+private:
 	u8 m_ChannelMap[CConfig::AllToneGenerators];
 	u8 m_PreviousChannelMap[CConfig::AllToneGenerators]; // Store previous channels for OMNI OFF restore
 	
