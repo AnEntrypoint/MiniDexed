@@ -23,7 +23,9 @@
 #include <circle/sound/pwmsoundbasedevice.h>
 #include <circle/sound/i2ssoundbasedevice.h>
 #include <circle/sound/hdmisoundbasedevice.h>
+#if RASPPI >= 4
 #include <circle/sound/usbsoundbasedevice.h>
+#endif
 #include <circle/net/syslogdaemon.h>
 #include <circle/net/ipaddress.h>
 #include <circle/gpiopin.h>
@@ -223,9 +225,15 @@ CMiniDexed::CMiniDexed (CConfig *pConfig, CInterruptSystem *pInterrupt,
 	}
 	else if (strcmp (pDeviceName, "usb") == 0)
 	{
+#if RASPPI >= 4
 		LOGNOTE ("USB audio mode (device created in Initialize)");
 		// CUSBSoundBaseDevice requires USB host to be initialized first;
 		// created in Initialize() below.
+#else
+		LOGNOTE ("USB audio mode NOT supported on this Pi - falling back to PWM");
+		m_pSoundDevice = new CPWMSoundBaseDevice (pInterrupt, pConfig->GetSampleRate (),
+							  pConfig->GetChunkSize ());
+#endif
 	}
 	else
 	{
@@ -282,6 +290,7 @@ bool CMiniDexed::Initialize (void)
 	LOGNOTE("CMiniDexed::Initialize called");
 	assert (m_pConfig);
 
+#if RASPPI >= 4
 	if (strcmp (m_pConfig->GetSoundDevice (), "usb") == 0)
 	{
 		LOGNOTE ("USB audio mode");
@@ -292,6 +301,7 @@ bool CMiniDexed::Initialize (void)
 			return false;
 		}
 	}
+#endif
 
 	assert (m_pSoundDevice);
 
