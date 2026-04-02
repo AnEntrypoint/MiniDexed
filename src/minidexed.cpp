@@ -57,6 +57,8 @@ CMiniDexed::CMiniDexed (CConfig *pConfig, CInterruptSystem *pInterrupt,
 	m_bQuadDAC8Chan (false),
 	m_pSoundDevice (0),
 	m_bChannelsSwapped (pConfig->GetChannelsSwapped ()),
+	m_bSoundDeviceStarted (false),
+	m_nSoundChannels (0),
 #ifdef ARM_ALLOW_MULTI_CORE
 //	m_nActiveTGsLog2 (0),
 #endif
@@ -383,18 +385,30 @@ bool CMiniDexed::Initialize (void)
 	// contains a sample for each of all the channels.
 	//
 	// See discussion here: https://github.com/rsta2/circle/discussions/453
-	if (!m_pSoundDevice->AllocateQueueFrames (2 * m_pConfig->GetChunkSize () / Channels))
+#if RASPPI >= 4
+	if (strcmp (m_pConfig->GetSoundDevice (), "usb") == 0)
 	{
-		LOGERR ("Cannot allocate sound queue");
-
-		return false;
+		// USB audio device may not be enumerated yet; defer Start() to Process()
+		// once plug-and-play reports the device is ready.
+		m_nSoundChannels = Channels;
 	}
+	else
+#endif
+	{
+		if (!m_pSoundDevice->AllocateQueueFrames (2 * m_pConfig->GetChunkSize () / Channels))
+		{
+			LOGERR ("Cannot allocate sound queue");
 
-	m_pSoundDevice->SetWriteFormat (SoundFormatSigned24_32, Channels);
+			return false;
+		}
 
-	m_nQueueSizeFrames = m_pSoundDevice->GetQueueSizeFrames ();
+		m_pSoundDevice->SetWriteFormat (SoundFormatSigned24_32, Channels);
 
-	m_pSoundDevice->Start ();
+		m_nQueueSizeFrames = m_pSoundDevice->GetQueueSizeFrames ();
+
+		m_pSoundDevice->Start ();
+		m_bSoundDeviceStarted = true;
+	}
 
 #ifdef ARM_ALLOW_MULTI_CORE
 	// start secondary cores
@@ -413,6 +427,23 @@ bool CMiniDexed::Initialize (void)
 void CMiniDexed::Process (bool bPlugAndPlayUpdated)
 {
 	CScheduler* const pScheduler = CScheduler::Get();
+
+#if RASPPI >= 4
+	if (!m_bSoundDeviceStarted && m_pSoundDevice && m_nSoundChannels > 0 && bPlugAndPlayUpdated)
+	{
+		if (m_pSoundDevice->AllocateQueueFrames (2 * m_pConfig->GetChunkSize () / m_nSoundChannels))
+		{
+			m_pSoundDevice->SetWriteFormat (SoundFormatSigned24_32, m_nSoundChannels);
+			m_nQueueSizeFrames = m_pSoundDevice->GetQueueSizeFrames ();
+			if (m_pSoundDevice->Start ())
+			{
+				m_bSoundDeviceStarted = true;
+				LOGNOTE ("USB sound device started");
+			}
+		}
+	}
+#endif
+
 #ifndef ARM_ALLOW_MULTI_CORE
 	ProcessSound ();
 	pScheduler->Yield();
@@ -1298,6 +1329,11 @@ void CMiniDexed::ProcessSound (void)
 {
 	assert (m_pSoundDevice);
 
+	if (!m_bSoundDeviceStarted)
+	{
+		return;
+	}
+
 	unsigned nFrames = m_nQueueSizeFrames - m_pSoundDevice->GetQueueFramesAvail ();
 	if (nFrames >= m_nQueueSizeFrames/2)
 	{
@@ -1331,6 +1367,11 @@ void CMiniDexed::ProcessSound (void)
 {
 	assert (m_pSoundDevice);
 	assert (m_pConfig);
+
+	if (!m_bSoundDeviceStarted)
+	{
+		return;
+	}
 
 	unsigned nFrames = m_nQueueSizeFrames - m_pSoundDevice->GetQueueFramesAvail ();
 	if (nFrames >= m_nQueueSizeFrames/2)

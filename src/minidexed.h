@@ -323,6 +323,8 @@ private:
 	CSoundBaseDevice *m_pSoundDevice;
 	bool m_bChannelsSwapped;
 	unsigned m_nQueueSizeFrames;
+	bool m_bSoundDeviceStarted;
+	int m_nSoundChannels;
 
 #ifdef ARM_ALLOW_MULTI_CORE
 //	unsigned m_nActiveTGsLog2;
