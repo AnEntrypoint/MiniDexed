@@ -61,6 +61,10 @@ void CConfig::Load (void)
 	if (m_SoundDevice == "hdmi") {
 		m_nChunkSize = m_Properties.GetNumber ("ChunkSize", 384*6);
 	}
+	else if (m_SoundDevice == "usb")
+	{
+		m_nChunkSize = m_Properties.GetNumber ("ChunkSize", 64);
+	}
 	else
 	{
 #ifdef ARM_ALLOW_MULTI_CORE

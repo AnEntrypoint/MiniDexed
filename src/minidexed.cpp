@@ -23,6 +23,7 @@
 #include <circle/sound/pwmsoundbasedevice.h>
 #include <circle/sound/i2ssoundbasedevice.h>
 #include <circle/sound/hdmisoundbasedevice.h>
+#include <circle/sound/usbsoundbasedevice.h>
 #include <circle/net/syslogdaemon.h>
 #include <circle/net/ipaddress.h>
 #include <circle/gpiopin.h>
@@ -220,6 +221,12 @@ CMiniDexed::CMiniDexed (CConfig *pConfig, CInterruptSystem *pInterrupt,
 		m_bChannelsSwapped = !m_bChannelsSwapped;
 #endif
 	}
+	else if (strcmp (pDeviceName, "usb") == 0)
+	{
+		LOGNOTE ("USB audio mode (device created in Initialize)");
+		// CUSBSoundBaseDevice requires USB host to be initialized first;
+		// created in Initialize() below.
+	}
 	else
 	{
 		LOGNOTE ("PWM mode");
@@ -274,6 +281,18 @@ bool CMiniDexed::Initialize (void)
 {
 	LOGNOTE("CMiniDexed::Initialize called");
 	assert (m_pConfig);
+
+	if (strcmp (m_pConfig->GetSoundDevice (), "usb") == 0)
+	{
+		LOGNOTE ("USB audio mode");
+		m_pSoundDevice = new CUSBSoundBaseDevice (m_pConfig->GetSampleRate ());
+		if (!m_pSoundDevice)
+		{
+			LOGERR ("Cannot create USB sound device");
+			return false;
+		}
+	}
+
 	assert (m_pSoundDevice);
 
 	if (!m_UI.Initialize ())
