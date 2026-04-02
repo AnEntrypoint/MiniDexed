@@ -435,7 +435,8 @@ void CUserInterface::ProcessCFA635 (void)
 	{
 		const char *pNames[] = {
 			m_pConfig->GetCFA635SerialDevice (),
-			"CFA635-USB", "utty1", "ttyACM1", "ttyUSB1"
+			"CFA635-USB", "utty1", "utty2", "utty3",
+			"ttyACM1", "ttyACM2", "ttyUSB1", "ttyUSB2"
 		};
 		for (unsigned i = 0; i < sizeof (pNames) / sizeof (pNames[0]); i++)
 		{
