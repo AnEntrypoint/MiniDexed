@@ -35,7 +35,7 @@ LOGMODULE ("mididevice");
 // MIDI "System" level (i.e. all TG) custom CC maps
 // Note: Even if number of TGs is not 8, there are only 8
 //       available to be used in the mappings here.
-#define NUM_MIDI_CC_MAPS 8
+#define NUM_MIDI_CC_MAPS 9
 const unsigned MIDISystemCCMap[NUM_MIDI_CC_MAPS][8] = {
 	{0,0,0,0,0,0,0,0}, // 0 = disabled
 	{16,17,18,19,80,81,82,83}, // 1 = General Purpose Controllers 1-8
@@ -44,7 +44,8 @@ const unsigned MIDISystemCCMap[NUM_MIDI_CC_MAPS][8] = {
 	{102,103,104,105,106,107,108,109},
 	{110,111,112,113,114,115,116,117},
 	{3,9,14,15,28,29,30,31},
-	{35,41,46,47,60,61,62,63}
+	{35,41,46,47,60,61,62,63},
+	{41,42,43,44,45,46,47,7} // 8 = M-Audio Axiom 49 factory faders (TG1-7 + master vol)
 };
 
 #define MIDI_SYSTEM_EXCLUSIVE_BEGIN	0xF0
@@ -68,6 +69,9 @@ CMIDIDevice::CMIDIDevice (CMiniDexed *pSynthesizer, CConfig *pConfig, CUserInter
 	m_nMIDISystemCCVol = m_pConfig->GetMIDISystemCCVol();
 	m_nMIDISystemCCPan = m_pConfig->GetMIDISystemCCPan();
 	m_nMIDISystemCCDetune = m_pConfig->GetMIDISystemCCDetune();
+	if (m_nMIDISystemCCVol >= NUM_MIDI_CC_MAPS) m_nMIDISystemCCVol = 0;
+	if (m_nMIDISystemCCPan >= NUM_MIDI_CC_MAPS) m_nMIDISystemCCPan = 0;
+	if (m_nMIDISystemCCDetune >= NUM_MIDI_CC_MAPS) m_nMIDISystemCCDetune = 0;
 
 	m_MIDISystemCCBitmap[0] = 0;
 	m_MIDISystemCCBitmap[1] = 0;
@@ -595,12 +599,33 @@ void CMIDIDevice::MIDIMessageHandler (const u8 *pMessage, size_t nLength, unsign
 						case MIDI_CC_RESONANCE:
 							m_pSynthesizer->SetResonance (maplong (pMessage[2], 0, 127, 0, 99), nTG);
 							break;
-							
+
 						case MIDI_CC_FREQUENCY_CUTOFF:
 							m_pSynthesizer->SetCutoff (maplong (pMessage[2], 0, 127, 0, 99), nTG);
 							break;
+
+						case MIDI_CC_ATTACK_TIME:
+							for (unsigned nOP = 0; nOP < 6; nOP++)
+								m_pSynthesizer->SetVoiceParameter (DEXED_OP_EG_R1, maplong (pMessage[2], 0, 127, 0, 99), nOP, nTG);
+							break;
+
+						case MIDI_CC_DECAY_TIME:
+							for (unsigned nOP = 0; nOP < 6; nOP++)
+								m_pSynthesizer->SetVoiceParameter (DEXED_OP_EG_R2, maplong (pMessage[2], 0, 127, 0, 99), nOP, nTG);
+							break;
+
+						case MIDI_CC_SUSTAIN_LEVEL:
+							for (unsigned nOP = 0; nOP < 6; nOP++)
+								m_pSynthesizer->SetVoiceParameter (DEXED_OP_EG_L3, maplong (pMessage[2], 0, 127, 0, 99), nOP, nTG);
+							break;
+
+						case MIDI_CC_RELEASE_TIME:
+							for (unsigned nOP = 0; nOP < 6; nOP++)
+								m_pSynthesizer->SetVoiceParameter (DEXED_OP_EG_R4, maplong (pMessage[2], 0, 127, 0, 99), nOP, nTG);
+							break;
 		
 						case MIDI_CC_REVERB_LEVEL:
+						case MIDI_CC_EFFECT3_DEPTH:
 							m_pSynthesizer->SetReverbSend (maplong (pMessage[2], 0, 127, 0, 99), nTG);
 							break;
 		
