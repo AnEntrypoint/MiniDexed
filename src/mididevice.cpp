@@ -625,8 +625,11 @@ void CMIDIDevice::MIDIMessageHandler (const u8 *pMessage, size_t nLength, unsign
 							break;
 		
 						case MIDI_CC_REVERB_LEVEL:
-						case MIDI_CC_EFFECT3_DEPTH:
 							m_pSynthesizer->SetReverbSend (maplong (pMessage[2], 0, 127, 0, 99), nTG);
+							break;
+
+						case MIDI_CC_EFFECT3_DEPTH:
+							m_pSynthesizer->SetTGParameter (CMiniDexed::TGParameterPitchBendRange, maplong (pMessage[2], 0, 127, 0, 12), nTG);
 							break;
 		
 						case MIDI_CC_DETUNE_LEVEL:
